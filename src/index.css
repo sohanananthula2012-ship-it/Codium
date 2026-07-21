@@ -1,114 +1,17 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  /* The IDE forces dark mode. Tokens are authored directly here. */
-  :root,
-  .dark {
-    /* Surfaces */
-    --background: 0 0% 12%;            /* #1e1e1e editor */
-    --foreground: 0 0% 80%;            /* #cccccc default text */
-    --card: 0 0% 14%;                  /* #252526 sidebar */
-    --card-foreground: 0 0% 80%;
-    --popover: 0 0% 14%;
-    --popover-foreground: 0 0% 80%;
-
-    /* Brand / accent — VS Code blue */
-    --primary: 206 100% 40%;           /* #007acc */
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 0 0% 17%;             /* #2d2d30 title bar */
-    --secondary-foreground: 0 0% 80%;
-
-    --muted: 0 0% 23%;                 /* #3c3c3c borders / hover rows */
-    --muted-foreground: 0 0% 52%;      /* #858585 muted text */
-
-    --accent: 206 100% 40%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 70% 50%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 0 0% 23%;
-    --input: 0 0% 23%;
-    --ring: 206 100% 40%;
-
-    --success: 120 60% 50%;            /* #3fb950 */
-    --warning: 38 90% 55%;             /* #cca700 */
-    --danger: 0 70% 50%;
-
-    /* Custom IDE tokens */
-    --titlebar: 0 0% 17%;
-    --activitybar: 0 0% 16%;
-    --statusbar: 0 0% 14%;
-    --tab-active: 0 0% 12%;
-    --tab-inactive: 0 0% 17%;
-
-    --radius: 0.25rem;
-  }
-}
-
-@layer base {
-  * {
-    @apply border-border;
-  }
-
-  html,
-  body,
-  #root {
-    width: 100%;
-    height: 100%;
-  }
-
+  :root { color-scheme: dark; }
+  html, body, #root { width: 100%; height: 100%; }
   body {
-    @apply bg-background text-foreground;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter",
-      Roboto, "Helvetica Neue", Arial, sans-serif;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    @apply bg-[#1e1e1e] text-[#cccccc];
+    font-family: "Inter", -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
-  /* Light-mode is disabled for this app. */
-  :root {
-    color-scheme: dark;
   }
 }
 
 @layer utilities {
-  .font-mono-code {
-    font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular,
-      Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  }
-
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted)) transparent;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted));
-    border-radius: 4px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.6);
-  }
-}
-
-@layer components {
-  .xterm-viewport {
-    background-color: transparent !important;
-  }
+  .font-mono { font-family: "JetBrains Mono", "Fira Code", monospace; }
 }
