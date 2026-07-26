@@ -77,4 +77,15 @@ export class GitHubAPI {
       return data.sha;
     } catch { return undefined; }
   }
+
+  async createFile(
+    owner: string, repo: string, path: string, content: string, message: string, branch: string = "main"
+  ) {
+    const body = { message, content: btoa(content), branch };
+    return this.req(`/repos/${owner}/${repo}/contents/${path}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
 }

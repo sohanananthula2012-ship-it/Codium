@@ -47,6 +47,9 @@ interface IdeState {
 
   sidebarPanel: SidebarPanel;
   setSidebarPanel: (panel: SidebarPanel) => void;
+
+  createFile: (path: string, content?: string) => Promise<void>;
+  uploadFile: (path: string, content: string) => Promise<void>;
 }
 
 const IdeContext = createContext<IdeState | null>(null);
@@ -195,6 +198,51 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     [repo, token, openTabs]
   );
 
+  const createFile = useCallback(
+    async (path: string, content: string = "") => {
+      if (!repo || !token) return;
+      try {
+        const gh = new GitHubAPI(token);
+        await gh.createFile(
+          repo.owner,
+          repo.name,
+          path,
+          content,
+          `Create ${path.split("/").pop()}`,
+          repo.branch
+        );
+        await refreshTree();
+        await openFile(path);
+        toast.success(`Created ${path.split("/").pop()}`);
+      } catch (err: any) {
+        toast.error(err.message || `Failed to create ${path}`);
+      }
+    },
+    [repo, token, refreshTree, openFile]
+  );
+
+  const uploadFile = useCallback(
+    async (path: string, base64Content: string) => {
+      if (!repo || !token) return;
+      try {
+        const gh = new GitHubAPI(token);
+        await gh.createFile(
+          repo.owner,
+          repo.name,
+          path,
+          base64Content,
+          `Upload ${path.split("/").pop()}`,
+          repo.branch
+        );
+        await refreshTree();
+        toast.success(`Uploaded ${path.split("/").pop()}`);
+      } catch (err: any) {
+        toast.error(err.message || `Failed to upload ${path}`);
+      }
+    },
+    [repo, token, refreshTree]
+  );
+
   const value: IdeState = {
     token,
     setToken,
@@ -213,6 +261,8 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     saveFile,
     sidebarPanel,
     setSidebarPanel,
+    createFile,
+    uploadFile,
   };
 
   return <IdeContext.Provider value={value}>{children}</IdeContext.Provider>;
