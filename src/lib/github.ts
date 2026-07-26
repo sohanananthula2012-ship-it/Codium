@@ -4,8 +4,15 @@ export interface Repo {
   id: number;
   name: string;
   full_name: string;
-  owner: { login: string };
+  owner: { login: string; avatar_url?: string };
   default_branch: string;
+  private: boolean;
+  updated_at: string;
+}
+
+export interface GitHubUser {
+  login: string;
+  avatar_url: string;
 }
 
 export interface TreeItem {
@@ -36,6 +43,10 @@ export class GitHubAPI {
 
   async listRepos(): Promise<Repo[]> {
     return this.req("/user/repos?sort=updated&per_page=100");
+  }
+
+  async getUser(): Promise<GitHubUser> {
+    return this.req("/user");
   }
 
   async getTree(owner: string, repo: string, branch: string): Promise<TreeItem[]> {
