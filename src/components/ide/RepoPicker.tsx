@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { GitHubAPI, type Repo, type GitHubUser } from "@/lib/github";
 import { useIdeState } from "@/hooks/use-ide-state";
-import { Github, ChevronDown, Search, Lock, Loader2 } from "lucide-react";
+import { Github, ChevronDown, Search, Lock, Loader2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -31,7 +31,7 @@ function timeAgo(dateStr: string) {
 }
 
 export function RepoPicker() {
-  const { token, setRepo } = useIdeState();
+  const { token, setRepo, logout } = useIdeState();
   const [repos, setRepos] = useState<Repo[]>([]);
   const [user, setUser] = useState<GitHubUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,6 +64,14 @@ export function RepoPicker() {
   return (
     <div className="flex min-h-screen flex-col items-center bg-black px-4 pt-16 pb-10">
       <div className="w-full max-w-2xl">
+        <button
+          onClick={logout}
+          className="mb-4 flex items-center gap-1.5 text-[13px] text-[#888] transition-colors hover:text-white"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back
+        </button>
+
         <h1 className="mb-6 text-[28px] font-semibold tracking-tight text-white">
           Import Git Repository
         </h1>
