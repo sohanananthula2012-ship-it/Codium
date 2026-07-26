@@ -1,48 +1,34 @@
-import { useState, useEffect } from "react";
-import { GitHubAPI } from "@/lib/github";
+import { useState } from "react";
 import { useIdeState } from "@/hooks/use-ide-state";
-import { GitCommit, GitPush, Loader2, FileEdit } from "lucide-react";
+import { GitCommit, Loader2, FileEdit } from "lucide-react";
 import { toast } from "sonner";
 
 export function GitPanel() {
-  const { repo, token, openTabs } = useIdeState();
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { repo, openTabs, saveFile } = useIdeState();
   const [pushing, setPushing] = useState<string | null>(null);
+  const [pushingAll, setPushingAll] = useState(false);
 
-  // Dirty files from open tabs
   const dirtyFiles = openTabs.filter(t => t.dirty);
 
   const pushFile = async (path: string) => {
-    if (!repo) return;
     setPushing(path);
     try {
-      const gh = new GitHubAPI(token);
-      // Get file content from editor - we need to track this better
-      // For now, this is a placeholder - the actual save happens in MonacoEditor
-      toast.info(`Push ${path} via Ctrl+S in editor`);
-    } catch (err: any) {
-      toast.error(err.message);
+      await saveFile(path);
     } finally {
       setPushing(null);
     }
   };
 
   const pushAll = async () => {
-    if (!repo || !message.trim() || dirtyFiles.length === 0) return;
-    setLoading(true);
+    if (dirtyFiles.length === 0) return;
+    setPushingAll(true);
     try {
-      const gh = new GitHubAPI(token);
-
-      // For each dirty file, we need to push it
-      // But we don't have the content here - it's in MonacoEditor
-      // So we tell the user to save each file individually
-
-      toast.info("Save each file with Ctrl+S, then push commits");
-    } catch (err: any) {
-      toast.error(err.message);
+      for (const tab of dirtyFiles) {
+        await saveFile(tab.path);
+      }
+      toast.success("All changes pushed");
     } finally {
-      setLoading(false);
+      setPushingAll(false);
     }
   };
 
@@ -53,29 +39,38 @@ export function GitPanel() {
       <div className="mb-2 text-[11px] font-bold uppercase text-[#858585]">Source Control</div>
       <div className="mb-2 text-sm text-[#cccccc]">{repo.owner}/{repo.name}</div>
 
-      {dirtyFiles.length > 0 && (
-        <div className="mb-3">
+      {dirtyFiles.length > 0 ? (
+        <div className="mb-3 space-y-1">
           <div className="mb-1 text-[11px] text-[#858585]">Changes ({dirtyFiles.length})</div>
           {dirtyFiles.map(f => (
             <div key={f.path} className="flex items-center gap-2 py-1 text-[12px]">
-              <FileEdit className="h-3 w-3 text-[#cca700]" />
-              <span className="text-[#cccccc]">{f.path.split("/").pop()}</span>
-              <span className="text-[#858585]">M</span>
+              <FileEdit className="h-3 w-3 shrink-0 text-[#cca700]" />
+              <span className="flex-1 truncate text-[#cccccc]">{f.path.split("/").pop()}</span>
+              <button
+                onClick={() => pushFile(f.path)}
+                disabled={pushing === f.path}
+                className="rounded px-1.5 py-0.5 text-[11px] text-[#007acc] hover:bg-[#3c3c3c] disabled:opacity-50"
+              >
+                {pushing === f.path ? <Loader2 className="h-3 w-3 animate-spin" /> : "Push"}
+              </button>
             </div>
           ))}
         </div>
+      ) : (
+        <p className="text-[12px] text-[#858585]">No changes</p>
       )}
 
-      <textarea
-        value={message}
-        onChange={e => setMessage(e.target.value)}
-        placeholder="Commit message..."
-        className="mb-2 h-20 resize-none rounded border border-[#3c3c3c] bg-[#1e1e1e] p-2 text-[12px] text-white outline-none focus:border-[#007acc]"
-      />
-
       <div className="mt-auto space-y-2">
+        <button
+          onClick={pushAll}
+          disabled={dirtyFiles.length === 0 || pushingAll}
+          className="flex w-full items-center justify-center gap-2 rounded bg-[#007acc] py-1.5 text-[12px] font-medium text-white hover:bg-[#0066aa] disabled:opacity-40"
+        >
+          {pushingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitCommit className="h-3.5 w-3.5" />}
+          Push all changes
+        </button>
         <p className="text-[11px] text-[#858585]">
-          Press <kbd className="rounded bg-[#3c3c3c] px-1">Ctrl+S</kbd> in editor to push each file
+          Each save creates its own commit on <span className="text-[#cccccc]">{repo.branch}</span>.
         </p>
       </div>
     </div>
