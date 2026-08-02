@@ -55,6 +55,7 @@ interface IdeState {
   closeTab: (path: string) => void;
   updateTabContent: (path: string, content: string) => void;
   saveFile: (path: string) => Promise<void>;
+  saveAll: () => Promise<void>;
   createFile: (path: string) => void;
 
   cursorPosition: CursorPosition;
@@ -257,6 +258,14 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     [repo, token, openTabs]
   );
 
+  const saveAll = useCallback(async () => {
+    const dirtyPaths = openTabs.filter(t => t.dirty).map(t => t.path);
+    if (dirtyPaths.length === 0) return;
+    for (const path of dirtyPaths) {
+      await saveFile(path);
+    }
+  }, [openTabs, saveFile]);
+
   const createFile = useCallback(
     (path: string) => {
       const cleanPath = path.trim().replace(/^\/+/, "");
@@ -322,6 +331,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     closeTab,
     updateTabContent,
     saveFile,
+    saveAll,
     createFile,
     cursorPosition,
     setCursorPosition,

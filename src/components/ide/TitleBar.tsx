@@ -16,13 +16,7 @@ const MENUS: Record<string, string[]> = {
 };
 
 export function TitleBar() {
-  const {
-    setSidebarPanel,
-    terminalVisible,
-    setTerminalVisible,
-    terminalMaximized,
-    setTerminalMaximized,
-  } = useIdeState();
+  const { setSidebarPanel, terminalVisible, setTerminalVisible, terminalMaximized, setTerminalMaximized, activePath, saveFile, saveAll } = useIdeState();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [newFileOpen, setNewFileOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -39,6 +33,8 @@ export function TitleBar() {
   const runMenuItem = (menu: string, item: string) => {
     setOpenMenu(null);
     if (menu === "File" && item === "New File") setNewFileOpen(true);
+    else if (menu === "File" && item === "Save") { if (activePath) saveFile(activePath); }
+    else if (menu === "File" && item === "Save All") saveAll();
     else if (menu === "View" && item === "Explorer") setSidebarPanel("explorer");
     else if (menu === "View" && item === "Search") setSidebarPanel("search");
     else if (menu === "View" && item === "Source Control") setSidebarPanel("git");
