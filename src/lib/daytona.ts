@@ -10,7 +10,22 @@ async function post<T>(url: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = await res.json().catch(() => ({}));
+
+  const raw = await res.text();
+  let data: any = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    // Non-JSON response usually means a platform-level failure (timeout,
+    // crash before our handler could respond) rather than our own error.
+    if (!res.ok) {
+      throw new Error(
+        `${url} returned HTTP ${res.status} without a JSON body — likely a function timeout or crash. ` +
+          `Check the function's logs in the Vercel dashboard.`
+      );
+    }
+  }
+
   if (!res.ok) throw new Error(data.error || `Request to ${url} failed (${res.status})`);
   return data as T;
 }

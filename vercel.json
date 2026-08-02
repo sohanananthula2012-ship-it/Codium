@@ -1,0 +1,9 @@
+{
+  "functions": {
+    "api/sandbox/create.ts": { "maxDuration": 60 },
+    "api/sandbox/exec.ts": { "maxDuration": 60 },
+    "api/sandbox/import-drive.ts": { "maxDuration": 60 },
+    "api/sandbox/write.ts": { "maxDuration": 30 },
+    "api/sandbox/preview-port.ts": { "maxDuration": 30 }
+  }
+}
