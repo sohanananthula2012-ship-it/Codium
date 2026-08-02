@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useIdeState } from "@/hooks/use-ide-state";
-import { ChevronRight, ChevronDown, File, Folder, Loader2 } from "lucide-react";
+import { ChevronRight, ChevronDown, File, Folder, Loader2, FilePlus, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface FolderNode {
@@ -98,26 +98,65 @@ function TreeNode({ node, depth }: { node: Node; depth: number }) {
 }
 
 export function FileTree() {
-  const { tree, treeLoading, repo } = useIdeState();
+  const { tree, treeLoading, repo, createFile, refreshTree } = useIdeState();
+  const [creating, setCreating] = useState(false);
+  const [newPath, setNewPath] = useState("");
 
   const nodes = useMemo(() => buildTree(tree.map(t => t.path)), [tree]);
 
-  if (treeLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <Loader2 className="h-5 w-5 animate-spin text-[#007acc]" />
-      </div>
-    );
-  }
+  const submitNewFile = () => {
+    if (newPath.trim()) createFile(newPath.trim());
+    setNewPath("");
+    setCreating(false);
+  };
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <div className="px-3 py-2 text-[11px] font-bold uppercase text-[#858585]">
-        {repo ? `${repo.owner}/${repo.name}` : "Explorer"}
+      <div className="flex items-center justify-between px-3 pb-1 pt-2">
+        <span className="text-[11px] font-bold uppercase text-[#bbbbbb]">Explorer</span>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setCreating(true)}
+            title="New File"
+            className="flex h-5 w-5 items-center justify-center rounded text-[#a1a1a1] hover:bg-[#3c3c3c] hover:text-white"
+          >
+            <FilePlus className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => refreshTree()}
+            title="Refresh Explorer"
+            className="flex h-5 w-5 items-center justify-center rounded text-[#a1a1a1] hover:bg-[#3c3c3c] hover:text-white"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
-      {nodes.map(node => (
-        <TreeNode key={node.path} node={node} depth={0} />
-      ))}
+      <div className="px-3 pb-2 text-[11px] font-bold uppercase text-[#858585]">
+        {repo ? `${repo.owner} — ${repo.name}` : "No project"}
+      </div>
+
+      {creating && (
+        <div className="flex items-center gap-1.5 px-3 py-1">
+          <File className="h-3.5 w-3.5 shrink-0 text-[#858585]" />
+          <input
+            autoFocus
+            value={newPath}
+            onChange={e => setNewPath(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && submitNewFile()}
+            onBlur={submitNewFile}
+            placeholder="filename.ext"
+            className="w-full rounded border border-[#007acc] bg-[#3c3c3c] px-1 py-0.5 text-[13px] text-white outline-none"
+          />
+        </div>
+      )}
+
+      {treeLoading ? (
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-[#007acc]" />
+        </div>
+      ) : (
+        nodes.map(node => <TreeNode key={node.path} node={node} depth={0} />)
+      )}
     </div>
   );
 }

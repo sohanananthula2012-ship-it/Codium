@@ -60,9 +60,11 @@ export class GitHubAPI {
   }
 
   async createOrUpdateFile(
-    owner: string, repo: string, path: string, content: string, message: string, sha?: string, branch: string = "main"
+    owner: string, repo: string, path: string, content: string, message: string,
+    sha?: string, branch: string = "main", isBase64 = false
   ) {
-    const body: any = { message, content: btoa(content), branch };
+    const encoded = isBase64 ? content : utf8ToBase64(content);
+    const body: any = { message, content: encoded, branch };
     if (sha) body.sha = sha;
     return this.req(`/repos/${owner}/${repo}/contents/${path}`, {
       method: "PUT",
@@ -77,4 +79,17 @@ export class GitHubAPI {
       return data.sha;
     } catch { return undefined; }
   }
+
+  async searchCode(owner: string, repo: string, query: string): Promise<{ path: string; url: string }[]> {
+    const q = encodeURIComponent(`${query} repo:${owner}/${repo}`);
+    const data = await this.req(`/search/code?q=${q}`, {
+      headers: { Accept: "application/vnd.github.text-match+json" },
+    });
+    return (data.items || []).map((it: any) => ({ path: it.path, url: it.html_url }));
+  }
+}
+
+// btoa() only accepts Latin1; this safely base64-encodes arbitrary UTF-8 text.
+function utf8ToBase64(str: string): string {
+  return btoa(unescape(encodeURIComponent(str)));
 }

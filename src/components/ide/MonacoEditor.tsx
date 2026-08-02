@@ -27,13 +27,16 @@ function languageFor(path: string) {
 }
 
 export function MonacoEditor() {
-  const { openTabs, activePath, updateTabContent, saveFile } = useIdeState();
+  const { openTabs, activePath, updateTabContent, saveFile, setCursorPosition } = useIdeState();
   const activeTab = openTabs.find(t => t.path === activePath);
 
   const handleMount: OnMount = (editor, monaco) => {
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       const path = editor.getModel()?.uri.path.replace(/^\//, "");
       if (path) saveFile(path);
+    });
+    editor.onDidChangeCursorPosition(e => {
+      setCursorPosition({ line: e.position.lineNumber, column: e.position.column });
     });
   };
 

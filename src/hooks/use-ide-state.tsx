@@ -4,9 +4,11 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react";
 import { GitHubAPI, type TreeItem } from "@/lib/github";
+import { DaytonaClient } from "@/lib/daytona";
 import { toast } from "sonner";
 
 export interface RepoRef {
@@ -23,7 +25,16 @@ export interface Tab {
   dirty: boolean;
 }
 
-export type SidebarPanel = "explorer" | "git";
+export type SidebarPanel = "explorer" | "search" | "git" | "npm";
+export type SandboxStatus = "idle" | "connecting" | "ready" | "error";
+export interface CursorPosition {
+  line: number;
+  column: number;
+}
+export interface OpenPort {
+  port: number;
+  url?: string;
+}
 
 interface IdeState {
   token: string;
@@ -44,9 +55,28 @@ interface IdeState {
   closeTab: (path: string) => void;
   updateTabContent: (path: string, content: string) => void;
   saveFile: (path: string) => Promise<void>;
+  createFile: (path: string) => void;
+
+  cursorPosition: CursorPosition;
+  setCursorPosition: (pos: CursorPosition) => void;
 
   sidebarPanel: SidebarPanel;
   setSidebarPanel: (panel: SidebarPanel) => void;
+
+  sandboxId: string | null;
+  repoDir: string | null;
+  wsUrl: string | null;
+  sandboxStatus: SandboxStatus;
+  connectSandbox: () => Promise<void>;
+
+  openPorts: OpenPort[];
+  reportPort: (port: number) => void;
+  getPortPreviewUrl: (port: number) => Promise<string>;
+
+  terminalVisible: boolean;
+  setTerminalVisible: (v: boolean) => void;
+  terminalMaximized: boolean;
+  setTerminalMaximized: (v: boolean) => void;
 }
 
 const IdeContext = createContext<IdeState | null>(null);
@@ -59,6 +89,16 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [openTabs, setOpenTabs] = useState<Tab[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [sidebarPanel, setSidebarPanel] = useState<SidebarPanel>("explorer");
+
+  const [sandboxId, setSandboxId] = useState<string | null>(null);
+  const [repoDir, setRepoDir] = useState<string | null>(null);
+  const [wsUrl, setWsUrl] = useState<string | null>(null);
+  const [sandboxStatus, setSandboxStatus] = useState<SandboxStatus>("idle");
+  const writeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [cursorPosition, setCursorPosition] = useState<CursorPosition>({ line: 1, column: 1 });
+  const [openPorts, setOpenPorts] = useState<OpenPort[]>([]);
+  const [terminalVisible, setTerminalVisible] = useState(true);
+  const [terminalMaximized, setTerminalMaximized] = useState(false);
 
   // Restore token from localStorage on load
   useEffect(() => {
@@ -77,12 +117,22 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     setTree([]);
     setOpenTabs([]);
     setActivePath(null);
+    setSandboxId(null);
+    setRepoDir(null);
+    setWsUrl(null);
+    setSandboxStatus("idle");
+    setOpenPorts([]);
   }, []);
 
   const setRepo = useCallback((r: RepoRef | null) => {
     setRepoState(r);
     setOpenTabs([]);
     setActivePath(null);
+    setSandboxId(null);
+    setRepoDir(null);
+    setWsUrl(null);
+    setSandboxStatus("idle");
+    setOpenPorts([]);
   }, []);
 
   const refreshTree = useCallback(async () => {
@@ -148,15 +198,27 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     [activePath]
   );
 
-  const updateTabContent = useCallback((path: string, content: string) => {
-    setOpenTabs(prev =>
-      prev.map(t =>
-        t.path === path
-          ? { ...t, content, dirty: content !== t.originalContent }
-          : t
-      )
-    );
-  }, []);
+  const updateTabContent = useCallback(
+    (path: string, content: string) => {
+      setOpenTabs(prev =>
+        prev.map(t =>
+          t.path === path
+            ? { ...t, content, dirty: content !== t.originalContent }
+            : t
+        )
+      );
+
+      if (sandboxStatus === "ready" && sandboxId && repoDir) {
+        clearTimeout(writeTimers.current[path]);
+        writeTimers.current[path] = setTimeout(() => {
+          DaytonaClient.write(sandboxId, repoDir, path, content).catch(() => {
+            toast.error(`Sandbox sync failed for ${path.split("/").pop()}`);
+          });
+        }, 800);
+      }
+    },
+    [sandboxStatus, sandboxId, repoDir]
+  );
 
   const saveFile = useCallback(
     async (path: string) => {
@@ -195,6 +257,55 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     [repo, token, openTabs]
   );
 
+  const createFile = useCallback(
+    (path: string) => {
+      const cleanPath = path.trim().replace(/^\/+/, "");
+      if (!cleanPath) return;
+      if (tree.some(t => t.path === cleanPath) || openTabs.some(t => t.path === cleanPath)) {
+        toast.error(`${cleanPath} already exists`);
+        return;
+      }
+      setTree(prev => [...prev, { path: cleanPath, mode: "100644", type: "blob", sha: "" }]);
+      setOpenTabs(prev => [
+        ...prev,
+        { path: cleanPath, content: "", originalContent: "", dirty: true },
+      ]);
+      setActivePath(cleanPath);
+    },
+    [tree, openTabs]
+  );
+
+  const reportPort = useCallback((port: number) => {
+    setOpenPorts(prev => (prev.some(p => p.port === port) ? prev : [...prev, { port }]));
+  }, []);
+
+  const getPortPreviewUrl = useCallback(
+    async (port: number) => {
+      if (!sandboxId) throw new Error("No sandbox connected");
+      const existing = openPorts.find(p => p.port === port)?.url;
+      if (existing) return existing;
+      const { url } = await DaytonaClient.previewPort(sandboxId, port);
+      setOpenPorts(prev => prev.map(p => (p.port === port ? { ...p, url } : p)));
+      return url;
+    },
+    [sandboxId, openPorts]
+  );
+
+  const connectSandbox = useCallback(async () => {
+    if (!repo || !token) return;
+    setSandboxStatus("connecting");
+    try {
+      const handle = await DaytonaClient.create(repo.owner, repo.name, repo.branch, token);
+      setSandboxId(handle.sandboxId);
+      setRepoDir(handle.repoDir);
+      setWsUrl(handle.wsUrl);
+      setSandboxStatus("ready");
+    } catch (err: any) {
+      setSandboxStatus("error");
+      toast.error(err.message || "Failed to connect to Daytona sandbox");
+    }
+  }, [repo, token]);
+
   const value: IdeState = {
     token,
     setToken,
@@ -211,8 +322,23 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     closeTab,
     updateTabContent,
     saveFile,
+    createFile,
+    cursorPosition,
+    setCursorPosition,
     sidebarPanel,
     setSidebarPanel,
+    sandboxId,
+    repoDir,
+    wsUrl,
+    sandboxStatus,
+    connectSandbox,
+    openPorts,
+    reportPort,
+    getPortPreviewUrl,
+    terminalVisible,
+    setTerminalVisible,
+    terminalMaximized,
+    setTerminalMaximized,
   };
 
   return <IdeContext.Provider value={value}>{children}</IdeContext.Provider>;
