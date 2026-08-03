@@ -154,26 +154,36 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshTree = useCallback(async () => {
-    if (!repo || !token) return;
+    if (!sandboxId || !repoDir) return;
     setTreeLoading(true);
     try {
-      const gh = new GitHubAPI(token);
-      const items = await gh.getTree(repo.owner, repo.name, repo.branch);
-      setTree(items.filter(i => i.type === "blob"));
+      const result = await DaytonaClient.exec(
+        sandboxId,
+        `find . -type f -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' -not -path './build/*' -not -path './.next/*' | sed 's|^\\./||'`,
+        repoDir
+      );
+      const paths = result.output
+        .split("\n")
+        .map(p => p.trim())
+        .filter(Boolean);
+      setTree(paths.map(path => ({ path, type: "blob" as const, mode: "100644", sha: "" })));
     } catch (err: any) {
-      toast.error(err.message || "Failed to load repo tree");
+      toast.error(err.message || "Failed to list sandbox files");
     } finally {
       setTreeLoading(false);
     }
-  }, [repo, token]);
+  }, [sandboxId, repoDir]);
 
+  // Files now come from the live sandbox filesystem, not GitHub — it's the
+  // sandbox that's the source of truth day-to-day, GitHub is just where you
+  // push to when you're ready to commit.
   useEffect(() => {
-    if (repo && token) refreshTree();
-  }, [repo, token, refreshTree]);
+    if (sandboxStatus === "ready") refreshTree();
+  }, [sandboxStatus, refreshTree]);
 
   const openFile = useCallback(
     async (path: string) => {
-      if (!repo || !token) return;
+      if (!sandboxId || !repoDir) return;
 
       const existing = openTabs.find(t => t.path === path);
       if (existing) {
@@ -182,21 +192,18 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const gh = new GitHubAPI(token);
-        const [content, sha] = await Promise.all([
-          gh.getFile(repo.owner, repo.name, path, repo.branch),
-          gh.getFileSha(repo.owner, repo.name, path, repo.branch),
-        ]);
+        const result = await DaytonaClient.exec(sandboxId, `cat "${path}"`, repoDir);
+        if (result.exitCode !== 0) throw new Error(result.output || `Couldn't read ${path}`);
         setOpenTabs(prev => [
           ...prev,
-          { path, content, originalContent: content, sha, dirty: false },
+          { path, content: result.output, originalContent: result.output, dirty: false },
         ]);
         setActivePath(path);
       } catch (err: any) {
         toast.error(err.message || `Failed to open ${path}`);
       }
     },
-    [repo, token, openTabs]
+    [sandboxId, repoDir, openTabs]
   );
 
   const setActiveFile = useCallback((path: string) => {
@@ -246,13 +253,17 @@ export function IdeProvider({ children }: { children: ReactNode }) {
 
       try {
         const gh = new GitHubAPI(token);
+        // We no longer fetch this on open (files come from the sandbox now),
+        // so resolve it here — if the file already exists on GitHub, pushing
+        // without its current sha would get rejected as a conflict.
+        const sha = tab.sha ?? (await gh.getFileSha(repo.owner, repo.name, path, repo.branch));
         const result = await gh.createOrUpdateFile(
           repo.owner,
           repo.name,
           path,
           tab.content,
           `Update ${path.split("/").pop()}`,
-          tab.sha,
+          sha,
           repo.branch
         );
         setOpenTabs(prev =>
@@ -297,8 +308,14 @@ export function IdeProvider({ children }: { children: ReactNode }) {
         { path: cleanPath, content: "", originalContent: "", dirty: true },
       ]);
       setActivePath(cleanPath);
+
+      if (sandboxStatus === "ready" && sandboxId && repoDir) {
+        DaytonaClient.exec(sandboxId, `mkdir -p "$(dirname "${cleanPath}")" && touch "${cleanPath}"`, repoDir).catch(
+          () => toast.error(`Couldn't create ${cleanPath} in the sandbox`)
+        );
+      }
     },
-    [tree, openTabs]
+    [tree, openTabs, sandboxStatus, sandboxId, repoDir]
   );
 
   const reportPort = useCallback((port: number) => {
@@ -321,33 +338,17 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     if (!repo || !token) return;
     setSandboxStatus("connecting");
     try {
-      const gh = new GitHubAPI(token);
-      const recordPath = ".codium/sandbox.json";
-      const existingRaw = await gh.tryGetFile(repo.owner, repo.name, recordPath, repo.branch);
-
-      let handle;
-      if (existingRaw) {
-        const record = JSON.parse(existingRaw) as { sandboxId: string; repoDir: string };
-        handle = await DaytonaClient.attach(record.sandboxId, record.repoDir);
-      } else {
-        handle = await DaytonaClient.create(repo.owner, repo.name, repo.branch, token);
-        // Persist it so every future session reuses this exact sandbox
-        // instead of provisioning a new one.
-        await gh.createOrUpdateFile(
-          repo.owner,
-          repo.name,
-          recordPath,
-          JSON.stringify({ sandboxId: handle.sandboxId, repoDir: handle.repoDir }, null, 2),
-          "Persist Daytona sandbox record",
-          undefined,
-          repo.branch
-        );
-      }
-
+      const handle = await DaytonaClient.create(repo.owner, repo.name, repo.branch, token);
       setSandboxId(handle.sandboxId);
       setRepoDir(handle.repoDir);
       setWsUrl(handle.wsUrl);
       setSandboxStatus("ready");
+      if (!handle.isUniversal) {
+        toast.success(
+          `Sandbox ready: ${handle.sandboxId} — set DAYTONA_SANDBOX_ID in Vercel to make this the one sandbox you always reconnect to`,
+          { duration: 8000 }
+        );
+      }
     } catch (err: any) {
       setSandboxStatus("error");
       toast.error(err.message || "Failed to connect to Daytona sandbox");

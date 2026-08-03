@@ -2,6 +2,7 @@ export interface SandboxHandle {
   sandboxId: string;
   wsUrl: string;
   repoDir: string;
+  isUniversal?: boolean;
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {
@@ -33,9 +34,6 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 export const DaytonaClient = {
   create(owner: string, name: string, branch: string, githubToken: string) {
     return post<SandboxHandle>("/api/sandbox/create", { owner, name, branch, githubToken });
-  },
-  attach(sandboxId: string, repoDir: string) {
-    return post<SandboxHandle>("/api/sandbox/attach", { sandboxId, repoDir });
   },
   write(sandboxId: string, repoDir: string, path: string, content: string, encoding: "utf8" | "base64" = "utf8") {
     return post<{ ok: true }>("/api/sandbox/write", { sandboxId, repoDir, path, content, encoding });

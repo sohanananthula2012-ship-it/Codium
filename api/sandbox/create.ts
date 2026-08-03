@@ -111,53 +111,98 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "owner, name, and branch are required" });
   }
 
+  const universalId = process.env.DAYTONA_SANDBOX_ID;
+
   try {
     const daytona = new Daytona({ apiKey: process.env.DAYTONA_API_KEY });
+    let sandbox: Awaited<ReturnType<typeof daytona.create>>;
+    let isFresh = false;
 
-    const sandbox = await step("create sandbox", () => daytona.create({ language: "typescript" }));
+    if (universalId) {
+      sandbox = await step("attach to universal sandbox", () => daytona.get(universalId));
+      await step("start universal sandbox", () => sandbox.start(60));
+    } else {
+      sandbox = await step("create sandbox", () => daytona.create({ language: "typescript" }));
+      isFresh = true;
+    }
+
     const workdir = await step("read sandbox workdir", () => sandbox.getWorkDir());
+
+    // In universal mode, multiple repos share one sandbox, each in its own
+    // folder. Otherwise it's the old single-repo-per-sandbox layout.
+    const repoDir = universalId ? `${workdir}/repos/${owner}-${name}` : `${workdir}/repo`;
 
     const cloneUrl = githubToken
       ? `https://${githubToken}@github.com/${owner}/${name}.git`
       : `https://github.com/${owner}/${name}.git`;
 
-    // Clone the repo and set up the terminal server in parallel — they touch
-    // different paths (./repo vs ./termserver.js + node_modules) so there's
-    // no reason to serialize them, and this is the main lever we have to
-    // stay under Vercel's function time limit.
+    const alreadyCloned = universalId
+      ? await step("check existing clone", async () => {
+          const check = await sandbox.process.executeCommand(
+            `test -d "${repoDir}/.git" && echo yes || echo no`,
+            workdir,
+            undefined,
+            10
+          );
+          return check.result?.trim() === "yes";
+        })
+      : false;
+
     await Promise.all([
-      step("git clone", () =>
-        sandbox.process.executeCommand(
-          `git clone --branch ${branch} --single-branch ${cloneUrl} repo`,
-          workdir,
-          undefined,
-          35
-        )
-      ),
-      step("set up terminal server", async () => {
+      alreadyCloned
+        ? Promise.resolve()
+        : step("git clone", () =>
+            sandbox.process.executeCommand(
+              `mkdir -p "$(dirname "${repoDir}")" && git clone --branch ${branch} --single-branch ${cloneUrl} "${repoDir}"`,
+              workdir,
+              undefined,
+              35
+            )
+          ),
+      step("set up terminal server + toolchain", async () => {
         await sandbox.fs.uploadFile(Buffer.from(TERM_SERVER_SOURCE, "utf8"), `${workdir}/termserver.js`);
         await sandbox.process.executeCommand("npm install ws --no-audit --no-fund", workdir, undefined, 35);
+        // Idempotent: only touches things that are actually missing.
+        await sandbox.process.executeCommand(SETUP_SCRIPT, workdir, undefined, 45).catch(() => {
+          // best-effort — don't fail the whole request if e.g. apt isn't available
+        });
       }),
     ]);
 
-    const repoDir = `${workdir}/repo`;
     const sessionId = "terminal";
-    await step("start terminal session", () => sandbox.process.createSession(sessionId));
-    await step("launch terminal server", () =>
-      sandbox.process.executeSessionCommand(sessionId, {
-        command: `cd ${repoDir} && PORT=${TERM_PORT} node ${workdir}/termserver.js`,
-        runAsync: true,
-      })
-    );
+    if (isFresh || universalId) {
+      await step("start terminal session", () => sandbox.process.createSession(sessionId)).catch(() => {
+        // session may already exist in a shared sandbox
+      });
+      await step("launch terminal server", () =>
+        sandbox.process.executeSessionCommand(sessionId, {
+          command: `cd ${workdir} && PORT=${TERM_PORT} node ${workdir}/termserver.js`,
+          runAsync: true,
+        })
+      ).catch(() => {
+        // already running is fine
+      });
+    }
 
     const preview = await step("create preview link", () => sandbox.getSignedPreviewUrl(TERM_PORT, 3600));
     const wsUrl = preview.url.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
 
-    return res.status(200).json({ sandboxId: sandbox.id, wsUrl, repoDir });
+    return res.status(200).json({ sandboxId: sandbox.id, wsUrl, repoDir, isUniversal: !!universalId });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || "Failed to create sandbox" });
   }
 }
+
+// Runs once per sandbox setup. Guards every step so re-running it (e.g. on
+// every attach) is cheap once everything's already installed.
+const SETUP_SCRIPT = `
+set -e
+# node_modules/.bin on PATH so locally-installed CLIs work without npx
+grep -qF 'node_modules/.bin' ~/.bashrc 2>/dev/null || echo 'export PATH="$PWD/node_modules/.bin:$HOME/.bun/bin:$PATH"' >> ~/.bashrc
+
+command -v python3 >/dev/null 2>&1 || (sudo apt-get update -y && sudo apt-get install -y python3 python3-pip) || true
+command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash || true
+`;
 
 async function step<T>(label: string, fn: () => Promise<T>): Promise<T> {
   try {

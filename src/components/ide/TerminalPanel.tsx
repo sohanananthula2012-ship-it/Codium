@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useIdeState } from "@/hooks/use-ide-state";
 import { DaytonaClient } from "@/lib/daytona";
-import { Trash2, Play, Loader2, Cloud, CheckCircle2, Plus, Minimize2, Maximize2, ExternalLink, X } from "lucide-react";
+import { Trash2, Play, Loader2, Cloud, CheckCircle2, Plus, Minimize2, Maximize2, ExternalLink, X, ClipboardPaste, TextSelect } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type PanelTab = "bash" | "output" | "problems";
@@ -55,6 +55,7 @@ export function TerminalPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
   const initedForUrl = useRef<string | null>(null);
 
   // Create the xterm instance once, on mount
@@ -106,8 +107,14 @@ export function TerminalPanel() {
     term.write("\x1b[2mConnecting to sandbox shell...\x1b[0m\r\n");
 
     const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
 
-    ws.onopen = () => term.write("\x1b[32mConnected.\x1b[0m\r\n");
+    ws.onopen = () => {
+      term.write("\x1b[32mConnected.\x1b[0m\r\n");
+      // The terminal server's shell starts in the sandbox root (it's shared
+      // across repos in universal mode), so land the user in their repo.
+      if (repoDir) ws.send(JSON.stringify({ type: "input", data: `cd "${repoDir}" && clear\r` }));
+    };
     ws.onmessage = ev => {
       try {
         const msg = JSON.parse(ev.data);
@@ -128,6 +135,7 @@ export function TerminalPanel() {
 
     return () => {
       dataDisposable.dispose();
+      wsRef.current = null;
       ws.close();
     };
   }, [wsUrl, connectionKey, reportPort]);
@@ -169,6 +177,21 @@ export function TerminalPanel() {
     } catch (err: any) {
       setOutputLog(l => [...l, `Error getting preview link for port ${port}: ${err.message}`]);
     }
+  };
+
+  const pasteAndRunClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      wsRef.current.send(JSON.stringify({ type: "input", data: text.replace(/\n$/, "") + "\r" }));
+    } catch {
+      setOutputLog(l => [...l, "Couldn't read the clipboard — your browser may need permission."]);
+      setTab("output");
+    }
+  };
+
+  const selectAllTerminal = () => {
+    termRef.current?.selectAll();
   };
 
   if (!terminalVisible) return null;
@@ -223,6 +246,15 @@ export function TerminalPanel() {
               Run
             </button>
           )}
+          <IconButton
+            title="Paste clipboard and run"
+            onClick={pasteAndRunClipboard}
+          >
+            <ClipboardPaste className="h-3.5 w-3.5" />
+          </IconButton>
+          <IconButton title="Select all" onClick={selectAllTerminal}>
+            <TextSelect className="h-3.5 w-3.5" />
+          </IconButton>
           <IconButton
             title="New terminal"
             onClick={() => {
