@@ -80,6 +80,17 @@ export class GitHubAPI {
     } catch { return undefined; }
   }
 
+  /** Returns decoded text content, or null if the file doesn't exist. */
+  async tryGetFile(owner: string, repo: string, path: string, branch: string): Promise<string | null> {
+    try {
+      const data = await this.req(`/repos/${owner}/${repo}/contents/${path}?ref=${branch}`);
+      if (!data.content) return null;
+      return decodeURIComponent(escape(atob(data.content.replace(/\n/g, ""))));
+    } catch {
+      return null;
+    }
+  }
+
   async searchCode(owner: string, repo: string, query: string): Promise<{ path: string; url: string }[]> {
     const q = encodeURIComponent(`${query} repo:${owner}/${repo}`);
     const data = await this.req(`/search/code?q=${q}`, {

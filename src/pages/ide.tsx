@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { useIdeState } from "@/hooks/use-ide-state";
 import { LoginScreen } from "@/components/ide/LoginScreen";
 import { RepoPicker } from "@/components/ide/RepoPicker";
+import { SandboxGate } from "@/components/ide/SandboxGate";
 import { TitleBar } from "@/components/ide/TitleBar";
 import { Sidebar } from "@/components/ide/Sidebar";
 import { TabBar } from "@/components/ide/TabBar";
@@ -66,10 +68,15 @@ function Breadcrumb() {
 }
 
 export default function Ide() {
-  const { token, repo } = useIdeState();
+  const { token, repo, sandboxUnlocked, sandboxStatus, connectSandbox } = useIdeState();
+
+  useEffect(() => {
+    if (sandboxUnlocked && sandboxStatus === "idle") connectSandbox();
+  }, [sandboxUnlocked, sandboxStatus, connectSandbox]);
 
   if (!token) return <LoginScreen />;
   if (!repo) return <RepoPicker />;
+  if (!sandboxUnlocked) return <SandboxGate />;
 
   return (
     <div className="flex h-screen flex-col">

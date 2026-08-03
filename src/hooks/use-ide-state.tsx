@@ -69,6 +69,8 @@ interface IdeState {
   wsUrl: string | null;
   sandboxStatus: SandboxStatus;
   connectSandbox: () => Promise<void>;
+  sandboxUnlocked: boolean;
+  unlockSandbox: (password: string) => boolean;
 
   openPorts: OpenPort[];
   reportPort: (port: number) => void;
@@ -94,6 +96,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [sandboxId, setSandboxId] = useState<string | null>(null);
   const [repoDir, setRepoDir] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
+  const [sandboxUnlocked, setSandboxUnlocked] = useState(false);
   const [sandboxStatus, setSandboxStatus] = useState<SandboxStatus>("idle");
   const writeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [cursorPosition, setCursorPosition] = useState<CursorPosition>({ line: 1, column: 1 });
@@ -123,6 +126,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     setWsUrl(null);
     setSandboxStatus("idle");
     setOpenPorts([]);
+    setSandboxUnlocked(false);
   }, []);
 
   const setRepo = useCallback((r: RepoRef | null) => {
@@ -134,7 +138,20 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     setWsUrl(null);
     setSandboxStatus("idle");
     setOpenPorts([]);
+    setSandboxUnlocked(
+      r ? localStorage.getItem(`codium_unlocked_${r.owner}_${r.name}`) === "true" : false
+    );
   }, []);
+
+  const unlockSandbox = useCallback(
+    (password: string) => {
+      if (password !== "I-AM-SOHAN-252") return false;
+      if (repo) localStorage.setItem(`codium_unlocked_${repo.owner}_${repo.name}`, "true");
+      setSandboxUnlocked(true);
+      return true;
+    },
+    [repo]
+  );
 
   const refreshTree = useCallback(async () => {
     if (!repo || !token) return;
@@ -304,7 +321,29 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     if (!repo || !token) return;
     setSandboxStatus("connecting");
     try {
-      const handle = await DaytonaClient.create(repo.owner, repo.name, repo.branch, token);
+      const gh = new GitHubAPI(token);
+      const recordPath = ".codium/sandbox.json";
+      const existingRaw = await gh.tryGetFile(repo.owner, repo.name, recordPath, repo.branch);
+
+      let handle;
+      if (existingRaw) {
+        const record = JSON.parse(existingRaw) as { sandboxId: string; repoDir: string };
+        handle = await DaytonaClient.attach(record.sandboxId, record.repoDir);
+      } else {
+        handle = await DaytonaClient.create(repo.owner, repo.name, repo.branch, token);
+        // Persist it so every future session reuses this exact sandbox
+        // instead of provisioning a new one.
+        await gh.createOrUpdateFile(
+          repo.owner,
+          repo.name,
+          recordPath,
+          JSON.stringify({ sandboxId: handle.sandboxId, repoDir: handle.repoDir }, null, 2),
+          "Persist Daytona sandbox record",
+          undefined,
+          repo.branch
+        );
+      }
+
       setSandboxId(handle.sandboxId);
       setRepoDir(handle.repoDir);
       setWsUrl(handle.wsUrl);
@@ -342,6 +381,8 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     wsUrl,
     sandboxStatus,
     connectSandbox,
+    sandboxUnlocked,
+    unlockSandbox,
     openPorts,
     reportPort,
     getPortPreviewUrl,

@@ -15,7 +15,21 @@ const RUNNERS: Record<string, (path: string) => string> = {
   mjs: path => `node ${path}`,
   ts: path => `npx tsx ${path}`,
   sh: path => `bash ${path}`,
+  html: path => serveStaticCmd(path),
+  htm: path => serveStaticCmd(path),
 };
+
+const SERVE_EXTENSIONS = new Set(["html", "htm"]);
+
+function serveStaticCmd(path: string) {
+  const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ".";
+  const logFile = `/tmp/codium-http-${Date.now()}.log`;
+  // HTML isn't something you "run" — it needs to be served. This starts a
+  // detached static file server (port 0 = let the OS pick a free one) and
+  // reads back which port it bound to. The terminal server's port-scanner
+  // will also pick it up and surface a preview pill within a few seconds.
+  return `cd ${dir} && (setsid python3 -m http.server 0 --bind 0.0.0.0 > ${logFile} 2>&1 < /dev/null &) && sleep 1 && cat ${logFile}`;
+}
 
 export function TerminalPanel() {
   const {
@@ -135,6 +149,12 @@ export function TerminalPanel() {
     try {
       const result = await DaytonaClient.exec(sandboxId, cmd, repoDir ?? undefined);
       setOutputLog(l => [...l, result.output, `[exit code ${result.exitCode}]`]);
+      if (SERVE_EXTENSIONS.has(ext)) {
+        setOutputLog(l => [
+          ...l,
+          "Serving as a static site — a \"Port …\" pill will appear next to the tabs above in a few seconds. Click it to open.",
+        ]);
+      }
     } catch (err: any) {
       setOutputLog(l => [...l, `Error: ${err.message}`]);
     } finally {
