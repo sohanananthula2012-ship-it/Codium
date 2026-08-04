@@ -98,7 +98,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [sandboxUnlocked, setSandboxUnlocked] = useState(false);
   const [sandboxStatus, setSandboxStatus] = useState<SandboxStatus>("idle");
-  const writeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({{}});
+  const writeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [cursorPosition, setCursorPosition] = useState<CursorPosition>({ line: 1, column: 1 });
   const [openPorts, setOpenPorts] = useState<OpenPort[]>([]);
   const [terminalVisible, setTerminalVisible] = useState(true);
