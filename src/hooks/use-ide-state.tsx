@@ -70,7 +70,7 @@ interface IdeState {
   sandboxStatus: SandboxStatus;
   connectSandbox: () => Promise<void>;
   sandboxUnlocked: boolean;
-  unlockSandbox: (password: string) => boolean;
+  unlockSandbox: (password: string) => Promise<boolean>;
 
   openPorts: OpenPort[];
   reportPort: (port: number) => void;
@@ -98,7 +98,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [sandboxUnlocked, setSandboxUnlocked] = useState(false);
   const [sandboxStatus, setSandboxStatus] = useState<SandboxStatus>("idle");
-  const writeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const writeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({{}});
   const [cursorPosition, setCursorPosition] = useState<CursorPosition>({ line: 1, column: 1 });
   const [openPorts, setOpenPorts] = useState<OpenPort[]>([]);
   const [terminalVisible, setTerminalVisible] = useState(true);
@@ -144,11 +144,22 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const unlockSandbox = useCallback(
-    (password: string) => {
-      if (password !== "I-AM-SOHAN-252") return false;
-      if (repo) localStorage.setItem(`codium_unlocked_${repo.owner}_${repo.name}`, "true");
-      setSandboxUnlocked(true);
-      return true;
+    async (password: string) => {
+      try {
+        const res = await fetch("/api/sandbox/unlock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ passphrase: password }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) return false;
+
+        if (repo) localStorage.setItem(`codium_unlocked_${repo.owner}_${repo.name}`, "true");
+        setSandboxUnlocked(true);
+        return true;
+      } catch {
+        return false;
+      }
     },
     [repo]
   );
